@@ -12,14 +12,14 @@ import {
 import { fetchTickers, Ticker } from '../services/api'
 
 const C = {
-  bg:     '#0b1120',
-  card:   '#0d1628',
-  border: '#0f1c2e',
+  bg:     '#111111',
+  card:   '#1a1a1a',
+  border: '#2a2a2a',
   green:  '#26a69a',
   red:    '#ef5350',
   cyan:   '#00d4ff',
-  text:   '#c8d8e8',
-  muted:  '#334455',
+  text:   '#e0e8f0',
+  muted:  '#555566',
 }
 
 const COINS: { symbol: string; name: string; color: string }[] = [

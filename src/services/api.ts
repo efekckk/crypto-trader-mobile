@@ -110,4 +110,111 @@ export const fetchHealth = async () => {
   return r.data
 }
 
+// ─── Confluence API ───────────────────────────────────────────────────────────
+export interface ConfluenceEngine {
+  name:      string
+  score:     number
+  weighted:  number
+  direction: 'long' | 'short' | 'neutral'
+  sources:   string[]
+}
+
+export interface ConfluenceData {
+  symbol:           string
+  timestamp:        string
+  confluence_score: number
+  direction:        'long' | 'short' | 'neutral'
+  signal_strength:  'strong' | 'moderate' | 'weak' | 'noise'
+  should_notify:    boolean
+  engines:          ConfluenceEngine[]
+  sources:          string[]
+  entry_price:      number | null
+  stop_loss:        number | null
+  take_profit_1:    number | null
+  take_profit_2:    number | null
+}
+
+export const fetchConfluence = async (
+  symbol    = 'BTC/USDT',
+  timeframe = '1h',
+): Promise<ConfluenceData | null> => {
+  const r = await api.post('/api/v1/analysis/confluence', {
+    symbol: toBinanceSym(symbol).replace('USDT', '/USDT'),
+    timeframe,
+  })
+  if (r.data?.status !== 'success') return null
+  return r.data.data
+}
+
+// ─── Trading API ──────────────────────────────────────────────────────────────
+export interface Balance {
+  asset:  string
+  free:   number
+  locked: number
+  total:  number
+}
+
+export interface AccountData {
+  balances:   Balance[]
+  can_trade:  boolean
+  maker_fee:  string
+  taker_fee:  string
+  update_time: number
+}
+
+export interface TradeOrder {
+  order_id:   number
+  symbol:     string
+  side:       'BUY' | 'SELL'
+  status:     string
+  qty:        number
+  usdt_spent: number
+  avg_price:  number
+  timestamp:  number
+}
+
+export interface TradeHistory {
+  id:        number
+  symbol:    string
+  side:      'BUY' | 'SELL'
+  price:     number
+  qty:       number
+  usdt:      number
+  fee:       number
+  fee_asset: string
+  time:      number
+  pnl:       number | null
+}
+
+export const fetchAccount = async (): Promise<AccountData | null> => {
+  const r = await api.get('/api/v1/trade/account')
+  if (r.data?.status !== 'success') return null
+  return r.data.data
+}
+
+export const placeOrder = async (
+  symbol:      string,
+  side:        'BUY' | 'SELL',
+  usdt_amount: number,
+): Promise<TradeOrder | null> => {
+  const r = await api.post('/api/v1/trade/order', {
+    symbol:      toBinanceSym(symbol),
+    side,
+    usdt_amount,
+    order_type: 'MARKET',
+  })
+  if (r.data?.status !== 'success') throw new Error(r.data?.message ?? 'Order failed')
+  return r.data.data
+}
+
+export const fetchTradeHistory = async (
+  symbol = 'BTCUSDT',
+  limit  = 50,
+): Promise<{ trades: TradeHistory[]; total_pnl: number; total_trades: number }> => {
+  const r = await api.get('/api/v1/trade/history', {
+    params: { symbol: toBinanceSym(symbol), limit },
+  })
+  return r.data?.data ?? { trades: [], total_pnl: 0, total_trades: 0 }
+}
+
 export default api

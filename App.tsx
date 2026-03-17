@@ -5,35 +5,22 @@ import { createStackNavigator } from '@react-navigation/stack'
 import { StatusBar } from 'expo-status-bar'
 import React from 'react'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
+import AnalysisScreen from './src/screens/AnalysisScreen'
 import ChartScreen from './src/screens/ChartScreen'
-import MarketScreen from './src/screens/MarketScreen'
-import OrderBookScreen from './src/screens/OrderBookScreen'
+import PortfolioScreen from './src/screens/PortfolioScreen'
+import SettingsScreen from './src/screens/SettingsScreen'
 import SignalsScreen from './src/screens/SignalsScreen'
+import StatArbScreen from './src/screens/StatArbScreen'
 
 const C = {
-  bg:     '#0b1120',
-  card:   '#0d1628',
-  border: '#0f1c2e',
-  green:  '#26a69a',
-  red:    '#ef5350',
+  bg:     '#111111',
+  card:   '#1a1a1a',
+  border: '#2a2a2a',
   cyan:   '#00d4ff',
-  text:   '#c8d8e8',
-  muted:  '#334455',
+  muted:  '#555566',
 }
 
-// ─── Stack for Markets → Chart ─────────────────────────────────────────────
-const MarketStack = createStackNavigator()
-
-function MarketStackScreen() {
-  return (
-    <MarketStack.Navigator screenOptions={{ headerShown: false }}>
-      <MarketStack.Screen name="MarketList" component={MarketScreen} />
-      <MarketStack.Screen name="Chart"      component={ChartScreen as any} />
-    </MarketStack.Navigator>
-  )
-}
-
-// ─── Stack for Chart tab (default BTC/USDT) ─────────────────────────────────
+// ─── Stack for Chart tab ─────────────────────────────────────────────────────
 const ChartStack = createStackNavigator()
 
 function ChartStackScreen() {
@@ -51,6 +38,16 @@ function ChartStackScreen() {
 // ─── Bottom Tabs ─────────────────────────────────────────────────────────────
 const Tab = createBottomTabNavigator()
 
+// Icon map
+const ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
+  Portfolio: 'wallet',
+  Chart:     'trending-up',
+  Signals:   'analytics',
+  Analysis:  'pulse',
+  StatArb:   'git-compare',
+  Settings:  'settings',
+}
+
 export default function App() {
   return (
     <SafeAreaProvider>
@@ -63,37 +60,31 @@ export default function App() {
               backgroundColor: C.bg,
               borderTopColor:  C.border,
               borderTopWidth:  1,
-              height:          60,
-              paddingBottom:   8,
+              height:          56,
+              paddingBottom:   6,
               paddingTop:      4,
             },
             tabBarActiveTintColor:   C.cyan,
             tabBarInactiveTintColor: C.muted,
             tabBarLabelStyle: {
-              fontSize:   11,
+              fontSize:   9,
               fontWeight: '600',
             },
-            tabBarIcon: ({ color, size }) => {
-              let iconName: keyof typeof Ionicons.glyphMap = 'bar-chart'
-
-              if (route.name === 'Markets') {
-                iconName = 'bar-chart'
-              } else if (route.name === 'Chart') {
-                iconName = 'trending-up'
-              } else if (route.name === 'Signals') {
-                iconName = 'analytics'
-              } else if (route.name === 'Order Book') {
-                iconName = 'list'
-              }
-
-              return <Ionicons name={iconName} size={size} color={color} />
-            },
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons
+                name={ICONS[route.name] ?? 'ellipse'}
+                size={size - 2}
+                color={color}
+              />
+            ),
           })}
         >
-          <Tab.Screen name="Markets"    component={MarketStackScreen} />
-          <Tab.Screen name="Chart"      component={ChartStackScreen} />
-          <Tab.Screen name="Signals"    component={SignalsScreen} />
-          <Tab.Screen name="Order Book" component={OrderBookScreen} />
+          <Tab.Screen name="Portfolio" component={PortfolioScreen} />
+          <Tab.Screen name="Chart"     component={ChartStackScreen} />
+          <Tab.Screen name="Signals"   component={SignalsScreen} />
+          <Tab.Screen name="Analysis"  component={AnalysisScreen} />
+          <Tab.Screen name="StatArb"   component={StatArbScreen} />
+          <Tab.Screen name="Settings"  component={SettingsScreen} />
         </Tab.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>

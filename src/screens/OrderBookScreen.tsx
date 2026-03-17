@@ -10,32 +10,23 @@ import {
 import { fetchOrderBook, OrderLevel } from '../services/api'
 
 const C = {
-  bg:     '#0b1120',
-  card:   '#0d1628',
-  border: '#0f1c2e',
+  bg:     '#111111',
+  card:   '#1a1a1a',
+  border: '#2a2a2a',
   green:  '#26a69a',
   red:    '#ef5350',
   cyan:   '#00d4ff',
-  text:   '#c8d8e8',
-  muted:  '#334455',
+  text:   '#e0e8f0',
+  muted:  '#555566',
 }
 
-const SYMBOLS = ['BTC', 'ETH', 'SOL', 'BNB']
-const LEVELS  = 15
+const ALL_COINS = ['BTC','ETH','BNB','SOL','ADA','XRP','DOGE','LINK','DOT','AVAX','LTC','MATIC']
+const SYMBOLS   = ALL_COINS
+const LEVELS    = 15
 
-const WS_STREAMS: Record<string, string> = {
-  BTC: 'wss://stream.binance.com:9443/ws/btcusdt@depth20@100ms',
-  ETH: 'wss://stream.binance.com:9443/ws/ethusdt@depth20@100ms',
-  SOL: 'wss://stream.binance.com:9443/ws/solusdt@depth20@100ms',
-  BNB: 'wss://stream.binance.com:9443/ws/bnbusdt@depth20@100ms',
-}
-
-const REST_SYMBOLS: Record<string, string> = {
-  BTC: 'BTC/USDT',
-  ETH: 'ETH/USDT',
-  SOL: 'SOL/USDT',
-  BNB: 'BNB/USDT',
-}
+// Dynamic WS URL — works for any coin
+const wsUrl  = (sym: string) => `wss://stream.binance.com:9443/ws/${sym.toLowerCase()}usdt@depth20@100ms`
+const restSym = (sym: string) => `${sym}USDT`
 
 interface BookState {
   bids: OrderLevel[]
@@ -75,7 +66,7 @@ export default function OrderBookScreen() {
 
   const loadRest = useCallback(async () => {
     try {
-      const data = await fetchOrderBook(REST_SYMBOLS[symbol], LEVELS)
+      const data = await fetchOrderBook(restSym(symbol), LEVELS)
       const bids = (data.bids ?? []).slice(0, LEVELS)
       const asks = (data.asks ?? []).slice(0, LEVELS)
       setBook({ bids, asks })
@@ -91,9 +82,7 @@ export default function OrderBookScreen() {
       wsRef.current = null
     }
 
-    const url = WS_STREAMS[symbol]
-    if (!url) return
-
+    const url = wsUrl(symbol)
     const ws = new WebSocket(url)
     wsRef.current = ws
 
@@ -186,8 +175,10 @@ export default function OrderBookScreen() {
         </View>
       </View>
 
-      {/* Symbol Selector */}
-      <View style={styles.symbolRow}>
+      {/* Symbol Selector — horizontal scroll for all 12 coins */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}
+        style={{ borderBottomWidth: 1, borderBottomColor: C.border }}
+        contentContainerStyle={{ paddingHorizontal: 10, paddingVertical: 6, gap: 6 }}>
         {SYMBOLS.map(s => (
           <TouchableOpacity
             key={s}
@@ -199,7 +190,7 @@ export default function OrderBookScreen() {
             </Text>
           </TouchableOpacity>
         ))}
-      </View>
+      </ScrollView>
 
       {/* Mid Price + Spread */}
       <View style={styles.midRow}>

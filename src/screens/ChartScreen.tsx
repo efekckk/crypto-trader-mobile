@@ -2,22 +2,51 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Dimensions,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native'
 import { WebView } from 'react-native-webview'
-import { fetchKlines, fetchAMD, fetchTickers, TUNNEL_URL, API_KEY } from '../services/api'
+import { fetchTickers, TUNNEL_URL, API_KEY } from '../services/api'
+
+// Micro-api call (direct, no auth wrapper needed for same tunnel)
+async function fetchMicrostructure(symbol: string, tunnelUrl: string, apiKey: string) {
+  try {
+    const r = await fetch(`${tunnelUrl}/api/v1/analysis/microstructure`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+      body: JSON.stringify({ symbol, depth: 10 }),
+    })
+    const d = await r.json()
+    return d?.data ?? null
+  } catch { return null }
+}
 
 const C = {
-  bg: '#0b1120', card: '#0d1628', border: '#0f1c2e',
+  bg: '#111111', card: '#1a1a1a', border: '#2a2a2a',
   green: '#26a69a', red: '#ef5350', cyan: '#00d4ff',
-  text: '#c8d8e8', muted: '#334455', orange: '#ff9800',
+  text: '#e0e8f0', muted: '#555566', orange: '#ff9800',
 }
 
 const TIMEFRAMES = ['15m', '1h', '4h', '1d']
 const { width: W } = Dimensions.get('window')
+
+const ALL_COINS = [
+  { sym: 'BTC/USDT', label: 'BTC' },
+  { sym: 'ETH/USDT', label: 'ETH' },
+  { sym: 'BNB/USDT', label: 'BNB' },
+  { sym: 'SOL/USDT', label: 'SOL' },
+  { sym: 'ADA/USDT', label: 'ADA' },
+  { sym: 'XRP/USDT', label: 'XRP' },
+  { sym: 'DOGE/USDT',label: 'DOGE'},
+  { sym: 'LINK/USDT',label: 'LINK'},
+  { sym: 'DOT/USDT', label: 'DOT' },
+  { sym: 'AVAX/USDT',label: 'AVAX'},
+  { sym: 'LTC/USDT', label: 'LTC' },
+  { sym: 'MATIC/USDT',label:'MATIC'},
+]
 
 interface Props {
   route: { params: { symbol: string } }
@@ -28,6 +57,107 @@ interface Signal {
   type: 'long' | 'short'
   entry: number; sl: number; tp1: number; tp2: number; rr: number
 }
+
+interface MicroData {
+  vamp:        number
+  micro_price: number
+  mid_price:   number
+  ofi: {
+    best_level: number
+    integrated: number
+  }
+  pressure: {
+    direction: 'buy' | 'sell' | 'neutral'
+    score:     number   // -1 … +1
+  }
+  static_obi:      number
+  liquidity_ratio: number
+}
+
+// ── MicroBar component ────────────────────────────────────────────────────────
+function MicroBar({ data }: { data: MicroData }) {
+  const score  = data.pressure.score       // −1 … +1
+  const dir    = data.pressure.direction
+  const pct    = Math.round((score + 1) / 2 * 100)  // 0-100 for bar width
+  const barCol = dir === 'buy' ? C.green : dir === 'sell' ? C.red : C.muted
+  const vamp   = data.vamp
+  const mid    = data.mid_price
+  const vampDiff = mid > 0 ? ((vamp - mid) / mid * 100) : 0
+  const obi    = data.static_obi
+
+  return (
+    <View style={mb.wrap}>
+      {/* OFI Pressure */}
+      <View style={mb.section}>
+        <Text style={mb.label}>OFI PRESSURE</Text>
+        <View style={mb.barTrack}>
+          {/* Center marker */}
+          <View style={mb.centerMark} />
+          {/* Fill from center */}
+          {score >= 0 ? (
+            <View style={[mb.barFill, {
+              left: '50%',
+              width: `${Math.abs(score) * 50}%` as any,
+              backgroundColor: C.green,
+            }]} />
+          ) : (
+            <View style={[mb.barFill, {
+              right: '50%',
+              width: `${Math.abs(score) * 50}%` as any,
+              backgroundColor: C.red,
+            }]} />
+          )}
+        </View>
+        <Text style={[mb.val, { color: barCol }]}>
+          {dir === 'buy' ? '▲ BUY' : dir === 'sell' ? '▼ SELL' : '─ NEUTRAL'}
+          {' '}{score >= 0 ? '+' : ''}{(score * 100).toFixed(0)}
+        </Text>
+      </View>
+
+      {/* VAMP vs Mid */}
+      <View style={mb.divider} />
+      <View style={mb.section}>
+        <Text style={mb.label}>VAMP vs MID</Text>
+        <Text style={[mb.val, { color: vampDiff > 0.01 ? C.green : vampDiff < -0.01 ? C.red : C.muted }]}>
+          {vampDiff > 0 ? '+' : ''}{vampDiff.toFixed(3)}%
+        </Text>
+        <Text style={mb.subval}>${vamp.toFixed(vamp >= 1000 ? 2 : 4)}</Text>
+      </View>
+
+      {/* Static OBI */}
+      <View style={mb.divider} />
+      <View style={mb.section}>
+        <Text style={mb.label}>OBI</Text>
+        <Text style={[mb.val, { color: obi > 0.1 ? C.green : obi < -0.1 ? C.red : C.muted }]}>
+          {obi >= 0 ? '+' : ''}{(obi * 100).toFixed(1)}%
+        </Text>
+        <Text style={mb.subval}>bid/ask</Text>
+      </View>
+
+      {/* Integrated OFI */}
+      <View style={mb.divider} />
+      <View style={mb.section}>
+        <Text style={mb.label}>INT. OFI</Text>
+        <Text style={[mb.val, { color: data.ofi.integrated > 0 ? C.green : data.ofi.integrated < 0 ? C.red : C.muted }]}>
+          {data.ofi.integrated >= 0 ? '+' : ''}{data.ofi.integrated.toFixed(3)}
+        </Text>
+        <Text style={mb.subval}>PCA</Text>
+      </View>
+    </View>
+  )
+}
+
+const mb = StyleSheet.create({
+  wrap:      { flexDirection: 'row', backgroundColor: '#161616', borderTopWidth: 1, borderTopColor: C.border, paddingVertical: 5, paddingHorizontal: 4 },
+  section:   { flex: 1, alignItems: 'center', paddingHorizontal: 2 },
+  divider:   { width: 1, backgroundColor: C.border, marginVertical: 2 },
+  label:     { fontSize: 7, color: C.muted, letterSpacing: 0.5, marginBottom: 2 },
+  val:       { fontSize: 10, fontWeight: '700', fontVariant: ['tabular-nums'] as any },
+  subval:    { fontSize: 8, color: C.muted, marginTop: 1 },
+  barTrack:  { width: '100%', height: 4, backgroundColor: C.border, borderRadius: 2, position: 'relative', overflow: 'hidden', marginBottom: 2 },
+  centerMark:{ position: 'absolute', left: '50%', top: 0, width: 1, height: 4, backgroundColor: C.muted },
+  barFill:   { position: 'absolute', top: 0, height: 4, borderRadius: 2 },
+})
 
 // ── Build the full HTML page that renders our chart ──────────────────────────
 function buildChartHTML(symbol: string, timeframe: string, apiUrl: string, apiKey: string): string {
@@ -41,7 +171,7 @@ function buildChartHTML(symbol: string, timeframe: string, apiUrl: string, apiKe
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { background:#0b1120; color:#c8d8e8; font-family:monospace; overflow:hidden; }
+  body { background:#111111; color:#e0e8f0; font-family:monospace; overflow:hidden; }
   #chart { width:100vw; height:100vh; position:relative; }
   #canvas-overlay { position:absolute; top:0; left:0; pointer-events:none; z-index:5; }
   #status { position:absolute; top:6px; left:8px; font-size:10px; color:#334455; z-index:10; }
@@ -81,11 +211,11 @@ const PHASE_COLORS = {
 // ── Create chart ──────────────────────────────────────────────────────────────
 const chartEl = document.getElementById('chart');
 const chart = LightweightCharts.createChart(chartEl, {
-  layout: { background: { type:'Solid', color:'#0b1120' }, textColor:'#7a8fa6', fontSize:10 },
-  grid:   { vertLines:{ color:'#0f1c2e' }, horzLines:{ color:'#0f1c2e' } },
-  crosshair: { vertLine:{ color:'#2a3d52', labelBackgroundColor:'#1a2a3a' }, horzLine:{ color:'#2a3d52', labelBackgroundColor:'#1a2a3a' } },
-  rightPriceScale: { borderColor:'#1a2a3a', scaleMargins:{ top:0.08, bottom:0.12 } },
-  timeScale: { borderColor:'#1a2a3a', timeVisible:true, secondsVisible:false, rightOffset:6, barSpacing:6 },
+  layout: { background: { type:'Solid', color:'#111111' }, textColor:'#888899', fontSize:10 },
+  grid:   { vertLines:{ color:'#222222' }, horzLines:{ color:'#222222' } },
+  crosshair: { vertLine:{ color:'#444444', labelBackgroundColor:'#2a2a2a' }, horzLine:{ color:'#444444', labelBackgroundColor:'#2a2a2a' } },
+  rightPriceScale: { borderColor:'#2a2a2a', scaleMargins:{ top:0.08, bottom:0.12 } },
+  timeScale: { borderColor:'#2a2a2a', timeVisible:true, secondsVisible:false, rightOffset:6, barSpacing:6 },
   width:  chartEl.clientWidth,
   height: chartEl.clientHeight,
 });
@@ -304,22 +434,19 @@ setInterval(loadData, 300000);
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function ChartScreen({ route, navigation }: Props) {
-  const { symbol } = route.params
+  const initSym = route.params?.symbol ?? 'BTC/USDT'
+  const [symbol,    setSymbol]    = useState(initSym)
   const [tfIndex,   setTfIndex]   = useState(1)
   const [signal,    setSignal]    = useState<Signal | null>(null)
   const [phase,     setPhase]     = useState('')
   const [price,     setPrice]     = useState<number | null>(null)
   const [change24h, setChange24h] = useState<number | null>(null)
-  const webviewRef                = useRef<any>(null)
+  const [micro,     setMicro]     = useState<MicroData | null>(null)
+  const microTimer                = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const tf = TIMEFRAMES[tfIndex]
-
-  // Reload chart when timeframe changes
-  useEffect(() => {
-    if (webviewRef.current) {
-      webviewRef.current.reload()
-    }
-  }, [tfIndex])
+  // KEY forces full WebView remount on symbol or timeframe change — fixes 4h blank bug
+  const webviewKey = `${symbol}-${tf}`
 
   // Ticker
   useEffect(() => {
@@ -334,6 +461,17 @@ export default function ChartScreen({ route, navigation }: Props) {
       }).catch(() => {})
     }, 5000)
     return () => clearInterval(id)
+  }, [symbol])
+
+  // Microstructure — fetch on symbol change, refresh every 30s
+  useEffect(() => {
+    setMicro(null)
+    const load = () =>
+      fetchMicrostructure(symbol, TUNNEL_URL, API_KEY).then(d => d && setMicro(d))
+    load()
+    if (microTimer.current) clearInterval(microTimer.current)
+    microTimer.current = setInterval(load, 30000)
+    return () => { if (microTimer.current) clearInterval(microTimer.current) }
   }, [symbol])
 
   const onMessage = useCallback((e: any) => {
@@ -371,13 +509,13 @@ export default function ChartScreen({ route, navigation }: Props) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={s.back}>
           <Text style={s.backTxt}>←</Text>
         </TouchableOpacity>
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={s.sym}>{symbol}</Text>
           {price !== null &&
-            <Text style={s.priceVal}>{fp(price)}</Text>
+            <Text style={s.priceVal} numberOfLines={1}>{fp(price)}</Text>
           }
         </View>
-        <View style={{ alignItems: 'flex-end', gap: 4 }}>
+        <View style={{ alignItems: 'flex-end', gap: 3, marginLeft: 8 }}>
           {change24h !== null &&
             <View style={[s.badge, { backgroundColor: isUp ? 'rgba(38,166,154,0.2)' : 'rgba(239,83,80,0.2)' }]}>
               <Text style={[s.badgeTxt, { color: isUp ? C.green : C.red }]}>
@@ -388,14 +526,27 @@ export default function ChartScreen({ route, navigation }: Props) {
           {phase && phase !== 'none' &&
             <View style={[s.phaseBadge, { borderColor: PHASE_COLOR[phase] ?? C.muted }]}>
               <Text style={[s.phaseTxt, { color: PHASE_COLOR[phase] ?? C.muted }]}>
-                {phase === 'accumulation' ? '● Accum' : phase === 'manipulation' ? '▲ Manip' : '▼ Distrib'}
+                {phase === 'accumulation' ? '● A' : phase === 'manipulation' ? '▲ M' : '▼ D'}
               </Text>
             </View>
           }
         </View>
       </View>
 
-      {/* Timeframe */}
+      {/* Coin Selector — compact pill row */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}
+        style={s.coinScroll}
+        contentContainerStyle={s.coinContent}>
+        {ALL_COINS.map(c => (
+          <TouchableOpacity key={c.sym}
+            style={[s.coinBtn, c.sym === symbol && s.coinBtnActive]}
+            onPress={() => { setSymbol(c.sym); setSignal(null) }}>
+            <Text style={[s.coinTxt, c.sym === symbol && s.coinTxtActive]}>{c.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      {/* Timeframe — inline with coin row to save vertical space */}
       <View style={s.tfRow}>
         {TIMEFRAMES.map((t, i) => (
           <TouchableOpacity key={t} style={[s.tfBtn, i === tfIndex && s.tfActive]} onPress={() => setTfIndex(i)}>
@@ -404,9 +555,9 @@ export default function ChartScreen({ route, navigation }: Props) {
         ))}
       </View>
 
-      {/* WebView Chart */}
+      {/* WebView Chart — key forces remount on symbol/tf change */}
       <WebView
-        ref={webviewRef}
+        key={webviewKey}
         style={{ flex: 1, backgroundColor: C.bg }}
         originWhitelist={['*']}
         source={{ html, baseUrl: TUNNEL_URL }}
@@ -445,6 +596,9 @@ export default function ChartScreen({ route, navigation }: Props) {
         </View>
       )}
 
+      {/* OFI + VAMP Microstructure Bar */}
+      {micro && <MicroBar data={micro} />}
+
     </View>
   )
 }
@@ -453,29 +607,37 @@ const s = StyleSheet.create({
   root:   { flex: 1, backgroundColor: C.bg },
   loader: { position: 'absolute', inset: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bg } as any,
 
-  // Header
-  header:    { flexDirection: 'row', alignItems: 'center', px: 12, paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: C.border } as any,
+  // Header — compact, safe area top
+  header:    { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: 52, paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: C.border },
   back:      { paddingRight: 10 },
-  backTxt:   { color: C.cyan, fontSize: 22 },
-  sym:       { color: C.text, fontSize: 14, fontWeight: '700' },
-  priceVal:  { color: '#e8eef4', fontSize: 17, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  badge:     { paddingHorizontal: 7, paddingVertical: 3, borderRadius: 5 },
-  badgeTxt:  { fontSize: 11, fontWeight: '700' },
-  phaseBadge:{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1 },
+  backTxt:   { color: C.cyan, fontSize: 20 },
+  sym:       { color: C.text, fontSize: 13, fontWeight: '700' },
+  priceVal:  { color: '#e8eef4', fontSize: 15, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  badge:     { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  badgeTxt:  { fontSize: 10, fontWeight: '700' },
+  phaseBadge:{ paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4, borderWidth: 1 },
   phaseTxt:  { fontSize: 9, fontWeight: '600' },
 
-  // Timeframe
-  tfRow:      { flexDirection: 'row', paddingHorizontal: 10, paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: C.border },
-  tfBtn:      { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 5, marginRight: 6, backgroundColor: C.card },
-  tfActive:   { backgroundColor: C.cyan },
-  tfTxt:      { color: C.muted, fontSize: 12, fontWeight: '600' },
+  // Coin selector — pill shaped, very compact
+  coinScroll:  { borderBottomWidth: 1, borderBottomColor: C.border, flexGrow: 0 },
+  coinContent: { paddingHorizontal: 8, paddingVertical: 5, gap: 5, flexDirection: 'row', alignItems: 'center' },
+  coinBtn:     { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, backgroundColor: C.card, borderWidth: 1, borderColor: C.border },
+  coinBtnActive:{ backgroundColor: C.cyan, borderColor: C.cyan },
+  coinTxt:     { color: C.muted, fontSize: 11, fontWeight: '600' },
+  coinTxtActive:{ color: '#000' },
+
+  // Timeframe — minimal height
+  tfRow:      { flexDirection: 'row', paddingHorizontal: 10, paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: C.border, gap: 6 },
+  tfBtn:      { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 10, backgroundColor: C.card, borderWidth: 1, borderColor: C.border },
+  tfActive:   { backgroundColor: C.cyan, borderColor: C.cyan },
+  tfTxt:      { color: C.muted, fontSize: 11, fontWeight: '600' },
   tfActiveTxt:{ color: '#000' },
 
-  // Signal bar
+  // Signal bar — compact
   sigBar:     { flexDirection: 'row', alignItems: 'center', borderLeftWidth: 3, backgroundColor: C.card, borderTopWidth: 1, borderTopColor: C.border },
-  sigBadge:   { paddingHorizontal: 8, paddingVertical: 8, alignSelf: 'stretch', justifyContent: 'center', minWidth: 68 },
+  sigBadge:   { paddingHorizontal: 8, paddingVertical: 6, alignSelf: 'stretch', justifyContent: 'center', minWidth: 64 },
   sigBadgeTxt:{ color: '#fff', fontSize: 10, fontWeight: '800', textAlign: 'center' },
-  sigLevel:   { flex: 1, paddingVertical: 5, paddingHorizontal: 3, alignItems: 'center' },
+  sigLevel:   { flex: 1, paddingVertical: 4, paddingHorizontal: 2, alignItems: 'center' },
   sigLabel:   { color: C.muted, fontSize: 8, marginBottom: 1 },
   sigVal:     { fontSize: 10, fontWeight: '700', fontVariant: ['tabular-nums'] },
 })
