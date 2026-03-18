@@ -102,10 +102,11 @@ export const fetchSignalPerformance = async (
   symbol   = 'BTCUSDT',
   interval = '1h',
   limit    = 200,
+  leverage = 1,
 ): Promise<{ signals: Signal[]; stats: Stats; equity_curve: any[] }> => {
   const sym = toBinanceSym(symbol)
   const r = await api.get('/api/v1/signals/performance', {
-    params: { symbol: sym, interval, limit },
+    params: { symbol: sym, interval, limit, leverage: Math.min(Math.max(leverage, 1), 3) },
   })
   return r.data?.data ?? { signals: [], stats: null, equity_curve: [] }
 }

@@ -5,6 +5,7 @@ import {
 } from 'react-native'
 import {
   AccountData, fetchAccount, fetchTradeHistory, TradeHistory,
+  FuturesAccount, fetchFuturesAccount,
 } from '../services/api'
 
 const C = {
@@ -29,6 +30,7 @@ function fp(n: number) {
 
 export default function PortfolioScreen() {
   const [account,   setAccount]   = useState<AccountData | null>(null)
+  const [futures,   setFutures]   = useState<FuturesAccount | null>(null)
   const [history,   setHistory]   = useState<TradeHistory[]>([])
   const [totalPnl,  setTotalPnl]  = useState(0)
   const [totalTrades, setTotalTrades] = useState(0)
@@ -40,15 +42,25 @@ export default function PortfolioScreen() {
 
   const load = useCallback(async (isRefresh = false) => {
     try {
-      const [acc, hist] = await Promise.all([
+      // Fire all 3 in parallel — each can fail independently
+      const [acc, fut, hist] = await Promise.allSettled([
         fetchAccount(),
+        fetchFuturesAccount(),
         fetchTradeHistory(`${selCoin}USDT`, 50),
       ])
-      setAccount(acc)
-      setHistory(hist.trades)
-      setTotalPnl(hist.total_pnl)
-      setTotalTrades(hist.total_trades)
-      setError(null)
+      if (acc.status === 'fulfilled')  setAccount(acc.value)
+      if (fut.status === 'fulfilled')  setFutures(fut.value)
+      if (hist.status === 'fulfilled' && hist.value) {
+        setHistory(hist.value.trades)
+        setTotalPnl(hist.value.total_pnl)
+        setTotalTrades(hist.value.total_trades)
+      }
+      // Only error if all failed
+      if (acc.status === 'rejected' && fut.status === 'rejected') {
+        setError('Failed to load accounts')
+      } else {
+        setError(null)
+      }
     } catch (e: any) {
       setError(e?.message ?? 'Failed to load portfolio')
     } finally {
@@ -103,7 +115,7 @@ export default function PortfolioScreen() {
           {/* ── Account Overview ── */}
           <View style={s.overviewRow}>
             <View style={s.overviewCard}>
-              <Text style={s.overviewLbl}>USDT Balance</Text>
+              <Text style={s.overviewLbl}>Spot USDT</Text>
               <Text style={[s.overviewVal, { color: C.cyan }]}>
                 {usdtBalance ? `$${usdtBalance.free.toFixed(2)}` : '$0.00'}
               </Text>
@@ -124,6 +136,54 @@ export default function PortfolioScreen() {
               </Text>
             </View>
           </View>
+
+          {/* ── Futures Overview ── */}
+          {futures && (
+            <View style={s.overviewRow}>
+              <View style={s.overviewCard}>
+                <Text style={s.overviewLbl}>Futures Balance</Text>
+                <Text style={[s.overviewVal, { color: C.orange }]}>
+                  ${futures.total_balance.toFixed(2)}
+                </Text>
+                <Text style={{ color: C.muted, fontSize: 10, marginTop: 2 }}>
+                  Available: ${futures.available_balance.toFixed(2)}
+                </Text>
+              </View>
+              <View style={s.overviewCard}>
+                <Text style={s.overviewLbl}>Unrealized PnL</Text>
+                <Text style={[s.overviewVal, { color: futures.total_unrealized >= 0 ? C.green : C.red }]}>
+                  {futures.total_unrealized >= 0 ? '+' : ''}${futures.total_unrealized.toFixed(2)}
+                </Text>
+                <Text style={{ color: C.muted, fontSize: 10, marginTop: 2 }}>
+                  {futures.positions.length} open position{futures.positions.length !== 1 ? 's' : ''}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {/* Futures positions */}
+          {futures && futures.positions.length > 0 && (
+            <View style={{ marginHorizontal: 14, marginTop: 6 }}>
+              {futures.positions.map(p => (
+                <View key={p.symbol} style={[s.balanceRow, { borderLeftWidth: 3, borderLeftColor: p.side === 'LONG' ? C.green : C.red }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.balanceAsset}>{p.symbol}</Text>
+                    <Text style={{ color: p.side === 'LONG' ? C.green : C.red, fontSize: 10, fontWeight: '600' }}>
+                      {p.side} {p.leverage}x · {p.size} qty
+                    </Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={[s.balanceFree, { color: p.unrealized_pnl >= 0 ? C.green : C.red }]}>
+                      {p.unrealized_pnl >= 0 ? '+' : ''}${p.unrealized_pnl.toFixed(2)}
+                    </Text>
+                    <Text style={{ color: C.muted, fontSize: 10 }}>
+                      Entry ${p.entry_price.toFixed(2)}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
 
           {/* ── Account flags ── */}
           {account && (
