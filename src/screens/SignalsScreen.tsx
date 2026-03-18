@@ -43,6 +43,15 @@ function fp(n: number) {
   if (n >= 1)    return '$' + n.toFixed(2)
   return '$' + n.toFixed(4)
 }
+function parseSources(raw: any): string[] {
+  if (Array.isArray(raw)) return raw
+  if (typeof raw === 'string') {
+    try { const p = JSON.parse(raw); return Array.isArray(p) ? p : [] }
+    catch { return [] }
+  }
+  return []
+}
+
 function scoreColor(s: number) {
   return s >= 70 ? C.green : s >= 45 ? C.orange : C.red
 }
@@ -572,10 +581,10 @@ export default function SignalsScreen() {
                         </View>
                       ))}
                     </View>
-                    {(sig as any).sources?.length > 0 && (
+                    {parseSources((sig as any).sources).length > 0 && (
                       <View style={{ marginTop: 6 }}>
                         <Text style={{ color: C.muted, fontSize: 9, marginBottom: 3 }}>AMD ANALYSIS</Text>
-                        {(sig as any).sources.map((src: string, i: number) => (
+                        {parseSources((sig as any).sources).map((src: string, i: number) => (
                           <Text key={i} style={{ color: C.muted, fontSize: 10 }}>• {src}</Text>
                         ))}
                       </View>
@@ -723,10 +732,10 @@ export default function SignalsScreen() {
                           </View>
                         ))}
                       </View>
-                      {(sig as any).sources?.length > 0 && (
+                      {parseSources((sig as any).sources).length > 0 && (
                         <View style={{ marginTop: 8 }}>
                           <Text style={{ color: C.muted, fontSize: 9, marginBottom: 3 }}>CONFLUENCE SOURCES</Text>
-                          {(sig as any).sources.map((src: string, i: number) => (
+                          {parseSources((sig as any).sources).map((src: string, i: number) => (
                             <Text key={i} style={{ color: C.muted, fontSize: 10, marginBottom: 2 }}>• {src}</Text>
                           ))}
                         </View>
