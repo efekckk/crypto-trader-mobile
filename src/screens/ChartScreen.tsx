@@ -248,12 +248,22 @@ function drawZones() {
       if (x1==null||x2==null||y1==null||y2==null) return;
       const rx=Math.min(x1,x2)-2, ry=Math.min(y1,y2), rw=Math.abs(x2-x1)+4, rh=Math.abs(y2-y1);
       if (rw<2||rh<2) return;
+      // Fill
       ctx.fillStyle = cfg.fill; ctx.fillRect(rx,ry,rw,rh);
-      ctx.strokeStyle = cfg.border; ctx.lineWidth=1.5; ctx.strokeRect(rx,ry,rw,rh);
-      ctx.fillStyle=cfg.border; ctx.fillRect(rx,ry,22,15);
-      ctx.fillStyle='#000'; ctx.font='bold 9px monospace';
-      ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillText(cfg.label, rx+11, ry+7.5);
+      // Border
+      ctx.strokeStyle = cfg.border; ctx.lineWidth=1; ctx.strokeRect(rx,ry,rw,rh);
+      // Label badge
+      const lbl = zone.label ?? cfg.label;
+      const lblW = Math.min(lbl.length * 6 + 8, rw - 2);
+      if (lblW > 8 && rh > 10) {
+        ctx.fillStyle = cfg.border;
+        ctx.fillRect(rx+1, ry+1, lblW, 13);
+        ctx.fillStyle = '#000';
+        ctx.font = 'bold 8px monospace';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(lbl, rx+4, ry+7.5);
+      }
     } catch(_) {}
   });
 }
@@ -393,8 +403,79 @@ async function loadData() {
     markers.sort((a,b)=>a.time-b.time);
     candle.setMarkers(markers);
 
-    // AMD zones on canvas
-    zones = (data.phase_history??[]).filter(z=>z.phase&&z.start_time&&z.end_time);
+    // ── AMD zones on canvas ────────────────────────────────────────────
+    // phase_history is no longer produced by the new detector.
+    // Instead, build zones from: Asia range, Judas Swing, Order Blocks, FVGs.
+    zones = [];
+
+    // 1. Asia Range → accumulation zone (horizontal band, last 8 bars wide)
+    const asiaRange = data.asia_range;
+    if (asiaRange && asiaRange.high && asiaRange.low) {
+      // span: use last 16 candle timestamps as width
+      const span = candles.slice(-16);
+      if (span.length >= 2) {
+        zones.push({
+          phase:      'accumulation',
+          start_time: new Date(span[0].time * 1000).toISOString(),
+          end_time:   new Date((candles[candles.length-1].time + 3600) * 1000).toISOString(),
+          zone_high:  asiaRange.high,
+          zone_low:   asiaRange.low,
+          label:      'Asia Range',
+        });
+      }
+    }
+
+    // 2. Judas Swing → manipulation zone (spike candle region)
+    const judas = data.judas_swing;
+    if (judas && judas.sweep_time && asiaRange) {
+      const sweepTs = Math.floor(new Date(judas.sweep_time).getTime() / 1000);
+      const endTs   = sweepTs + 3600 * 3;  // 3 candles wide
+      const sweepExtreme = judas.direction === 'down'
+        ? judas.sweep_price  // below Asia low
+        : judas.sweep_price; // above Asia high
+      const [zHigh, zLow] = judas.direction === 'down'
+        ? [asiaRange.low, sweepExtreme]
+        : [sweepExtreme, asiaRange.high];
+      zones.push({
+        phase:      'manipulation',
+        start_time: new Date(sweepTs * 1000).toISOString(),
+        end_time:   new Date(endTs   * 1000).toISOString(),
+        zone_high:  zHigh,
+        zone_low:   zLow,
+        label:      'Judas ' + (judas.direction === 'down' ? 'SSL' : 'BSL'),
+      });
+    }
+
+    // 3. Order Blocks → distribution-colored boxes
+    obs.forEach(ob => {
+      if (!ob.open_time) return;
+      const obTs  = Math.floor(new Date(ob.open_time).getTime() / 1000);
+      const endTs = obTs + 3600 * 4;  // 4 candles wide
+      zones.push({
+        phase:      ob.type === 'bearish' ? 'distribution' : 'accumulation',
+        start_time: new Date(obTs  * 1000).toISOString(),
+        end_time:   new Date(endTs * 1000).toISOString(),
+        zone_high:  ob.high,
+        zone_low:   ob.low,
+        label:      'OB',
+      });
+    });
+
+    // 4. FVGs → semi-transparent manipulation color
+    (data.fair_value_gaps ?? []).slice(0, 4).forEach(f => {
+      if (!f.timestamp) return;
+      const fTs  = Math.floor(new Date(f.timestamp).getTime() / 1000);
+      const endTs = fTs + 3600 * 2;
+      zones.push({
+        phase:      'manipulation',
+        start_time: new Date(fTs  * 1000).toISOString(),
+        end_time:   new Date(endTs * 1000).toISOString(),
+        zone_high:  f.gap_high,
+        zone_low:   f.gap_low,
+        label:      'FVG',
+      });
+    });
+
     drawZones();
 
     // Signal lines

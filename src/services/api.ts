@@ -9,7 +9,7 @@ export const API_KEY    = process.env.EXPO_PUBLIC_API_KEY
 
 const api = axios.create({
   baseURL: TUNNEL_URL,
-  timeout: 10000,
+  timeout: 45000,
   headers: {
     'X-API-Key': API_KEY,
     'Content-Type': 'application/json',
@@ -49,9 +49,21 @@ export interface Signal {
 }
 
 export interface Stats {
-  total: number; wins: number; losses: number; open: number
-  win_rate: number; total_pnl: number; avg_win: number; avg_loss: number
-  profit_factor: number
+  total:          number
+  wins:           number
+  losses:         number
+  open:           number
+  win_rate:       number
+  total_pnl:      number
+  avg_win:        number
+  avg_loss:       number
+  profit_factor:  number
+  // Simulation stats
+  sim_balance:      number   // $100 başlangıçla biten bakiye
+  sim_total_pnl:    number   // net $ kazanç/kayıp
+  sim_total_return: number   // net %
+  max_drawdown:     number   // % max düşüş
+  sharpe:           number
 }
 
 export interface OrderLevel { price: number; qty: number }
