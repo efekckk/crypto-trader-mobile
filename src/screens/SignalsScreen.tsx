@@ -453,6 +453,8 @@ export default function SignalsScreen() {
                     )}
                     <Text style={{ color: C.muted, fontSize: 9 }}>
                       {new Date(sig.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      {' '}
+                      {new Date(sig.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}
                     </Text>
                   </View>
                 </View>
@@ -672,7 +674,7 @@ export default function SignalsScreen() {
                     <Text style={s.sigDate}>
                       {new Date(sig.timestamp).toLocaleDateString('en-US',{month:'short',day:'numeric'})}
                       {'\n'}
-                      {new Date(sig.timestamp).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}
+                      {new Date(sig.timestamp).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false})}
                     </Text>
                     <View style={[s.dirBadge2, { backgroundColor: isLong ? C.green+'22' : C.red+'22', marginLeft: 4 }]}>
                       <Text style={[s.dirTxt2, { color: isLong ? C.green : C.red }]}>
