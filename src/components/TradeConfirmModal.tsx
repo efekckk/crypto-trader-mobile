@@ -4,7 +4,7 @@ import {
   ActivityIndicator, Alert, Modal, StyleSheet,
   Text, TextInput, TouchableOpacity, View,
 } from 'react-native'
-import { placeOrder, Signal } from '../services/api'
+import { placeFuturesOrder, Signal } from '../services/api'
 
 const C = {
   bg:     '#111111',
@@ -34,6 +34,7 @@ function fp(n: number) {
 
 export default function TradeConfirmModal({ visible, signal, symbol, onClose, onSuccess }: Props) {
   const [amount,   setAmount]   = useState('100')
+  const [leverage, setLeverage] = useState(1)
   const [placing,  setPlacing]  = useState(false)
 
   // Load saved max trade amount from SecureStore
@@ -58,13 +59,17 @@ export default function TradeConfirmModal({ visible, signal, symbol, onClose, on
     }
     setPlacing(true)
     try {
-      const order = await placeOrder(fullSym, side, usdt)
+      const order = await placeFuturesOrder(fullSym, side, usdt, leverage)
       if (order) {
         onSuccess(order.order_id)
         onClose()
         Alert.alert(
           'Order Placed',
-          `${side} ${order.qty.toFixed(6)} ${symbol}\n@ ~${fp(order.avg_price)}\nOrder ID: ${order.order_id}`,
+          `${side} ${order.qty} ${symbol} @ ~${fp(order.avg_price)}\n`
+          + `Leverage: ${order.leverage}x\n`
+          + `Notional: $${order.notional}\n`
+          + `Margin: $${order.margin_used}\n`
+          + `Order ID: ${order.order_id}`,
           [{ text: 'OK' }]
         )
       }
@@ -155,10 +160,41 @@ export default function TradeConfirmModal({ visible, signal, symbol, onClose, on
             />
           </View>
 
+          {/* Leverage selector */}
+          <View style={s.amountSection}>
+            <Text style={s.amountLbl}>Leverage (max 3x)</Text>
+            <View style={s.amountRow}>
+              {[1, 2, 3].map(lev => (
+                <TouchableOpacity
+                  key={lev}
+                  style={[s.presetBtn, leverage === lev && s.presetActive]}
+                  onPress={() => setLeverage(lev)}
+                >
+                  <Text style={[s.presetTxt, leverage === lev && s.presetActiveTxt]}>
+                    {lev}x
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {leverage > 1 && (
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 }}>
+                <Text style={{ color: C.muted, fontSize: 10 }}>
+                  Margin: ${(parseFloat(amount) || 0).toFixed(2)}
+                </Text>
+                <Text style={{ color: C.orange, fontSize: 10, fontWeight: '600' }}>
+                  Notional: ${((parseFloat(amount) || 0) * leverage).toFixed(2)}
+                </Text>
+              </View>
+            )}
+          </View>
+
           {/* Warning */}
           <View style={s.warnBox}>
             <Text style={s.warnTxt}>
-              This places a real {side} MARKET order on Binance Spot. Funds will be debited immediately.
+              {leverage > 1
+                ? `⚠ ${leverage}x kaldıraçlı Futures MARKET order. Margin: $${(parseFloat(amount)||0).toFixed(0)}, Pozisyon: $${((parseFloat(amount)||0)*leverage).toFixed(0)}. Likidasyon riski var!`
+                : `Binance Futures MARKET ${side} order. Kaldıraçsız (1x).`
+              }
             </Text>
           </View>
 
@@ -175,7 +211,7 @@ export default function TradeConfirmModal({ visible, signal, symbol, onClose, on
               {placing ? (
                 <ActivityIndicator color="#000" size="small" />
               ) : (
-                <Text style={s.confirmTxt}>{side} ${amount}</Text>
+                <Text style={s.confirmTxt}>{side} ${amount} {leverage > 1 ? `(${leverage}x)` : ''}</Text>
               )}
             </TouchableOpacity>
           </View>

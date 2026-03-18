@@ -117,6 +117,67 @@ export const fetchAMD = async (symbol: string, timeframe: string) => {
   return r.data?.data ?? {}
 }
 
+// ─── Futures Trading API ──────────────────────────────────────────────────────
+export interface FuturesPosition {
+  symbol:         string
+  side:           'LONG' | 'SHORT' | 'NONE'
+  size:           number
+  entry_price:    number
+  mark_price:     number
+  unrealized_pnl: number
+  leverage:       number
+  margin_type:    string
+  notional:       number
+}
+
+export interface FuturesAccount {
+  total_balance:     number
+  available_balance: number
+  total_unrealized:  number
+  total_margin:      number
+  can_trade:         boolean
+  positions:         FuturesPosition[]
+}
+
+export const fetchFuturesAccount = async (): Promise<FuturesAccount | null> => {
+  const r = await api.get('/api/v1/futures/account')
+  if (r.data?.status !== 'success') return null
+  return r.data.data
+}
+
+export const setFuturesLeverage = async (
+  symbol: string, leverage: number
+): Promise<any> => {
+  const r = await api.post('/api/v1/futures/leverage', {
+    symbol: toBinanceSym(symbol), leverage: Math.min(leverage, 3),
+  })
+  return r.data
+}
+
+export const placeFuturesOrder = async (
+  symbol:      string,
+  side:        'BUY' | 'SELL',
+  usdt_amount: number,
+  leverage:    number = 1,
+): Promise<any> => {
+  const r = await api.post('/api/v1/futures/order', {
+    symbol:      toBinanceSym(symbol),
+    side,
+    usdt_amount,
+    leverage:    Math.min(leverage, 3),
+  })
+  if (r.data?.status !== 'success') throw new Error(r.data?.message ?? 'Order failed')
+  return r.data.data
+}
+
+export const closeFuturesPosition = async (symbol: string): Promise<any> => {
+  const r = await api.post('/api/v1/futures/close', {
+    symbol: toBinanceSym(symbol),
+  })
+  if (r.data?.status !== 'success') throw new Error(r.data?.message ?? 'Close failed')
+  return r.data.data
+}
+
 export const fetchHealth = async () => {
   const r = await api.get('/health')
   return r.data

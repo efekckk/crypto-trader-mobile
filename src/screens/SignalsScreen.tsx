@@ -373,6 +373,29 @@ export default function SignalsScreen() {
 
   const openSignals = signals.filter(s => s.outcome === 'open')
 
+  // ── Collect ALL open signals across all cached coins ──────────
+  const allOpenSignals: { coin: string; signal: Signal; live: { pnl: number; price: number } | null }[] = []
+  for (const coin of ALL_COINS) {
+    const key = cacheKey(coin, timeframe)
+    const cached = SIGNAL_CACHE.get(key)
+    if (!cached) continue
+    const opens = cached.data.signals.filter((sg: Signal) => sg.outcome === 'open')
+    for (const sig of opens) {
+      const ticker = tickers[`${coin}/USDT`]
+      let live = null
+      if (ticker) {
+        const cp = ticker.price
+        const pnl = sig.type === 'long'
+          ? ((cp - sig.entry) / sig.entry) * 100
+          : ((sig.entry - cp) / sig.entry) * 100
+        live = { pnl, price: cp }
+      }
+      allOpenSignals.push({ coin, signal: sig, live })
+    }
+  }
+  // Sort: newest first
+  allOpenSignals.sort((a, b) => new Date(b.signal.timestamp).getTime() - new Date(a.signal.timestamp).getTime())
+
   return (
     <ScrollView style={s.root} contentContainerStyle={{ paddingBottom: 40 }}>
 
@@ -381,6 +404,11 @@ export default function SignalsScreen() {
         <Text style={s.hdrTitle}>Signals</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           {sigStale && <ActivityIndicator size="small" color={C.muted} />}
+          {allOpenSignals.length > 0 && (
+            <View style={s.openCountBadge}>
+              <Text style={s.openCountTxt}>{allOpenSignals.length} open</Text>
+            </View>
+          )}
           {confluence && (
             <Text style={{ color: scoreColor(confluence.confluence_score), fontSize: 13, fontWeight: '700' }}>
               {confluence.confluence_score}/100
@@ -388,6 +416,51 @@ export default function SignalsScreen() {
           )}
         </View>
       </View>
+
+      {/* ── ALL OPEN POSITIONS (cross-coin) ── */}
+      {allOpenSignals.length > 0 && (
+        <View style={s.openSection}>
+          <Text style={s.openTitle}>Open Positions</Text>
+          {allOpenSignals.map((item, idx) => {
+            const { coin, signal: sig, live } = item
+            const isLong = sig.type === 'long'
+            const score  = (sig as any).confluence_score ?? 0
+            return (
+              <TouchableOpacity
+                key={`${coin}-${sig.id}-${idx}`}
+                style={[s.openCard, { borderLeftColor: isLong ? C.green : C.red }]}
+                activeOpacity={0.8}
+                onPress={() => { setSymbol(coin); setTradeSig(sig); setTradeModal(true) }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 8 }}>
+                  <View style={[s.openDirBadge, { backgroundColor: isLong ? C.green : C.red }]}>
+                    <Text style={s.openDirTxt}>{isLong ? '▲' : '▼'}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.openCoin}>{coin}/USDT</Text>
+                    <Text style={s.openEntry}>Entry {fp(sig.entry)}</Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-end', gap: 2 }}>
+                    {live && (
+                      <Text style={[s.openPnl, { color: live.pnl >= 0 ? C.green : C.red }]}>
+                        {live.pnl >= 0 ? '+' : ''}{live.pnl.toFixed(2)}%
+                      </Text>
+                    )}
+                    {score > 0 && (
+                      <Text style={{ color: scoreColor(score), fontSize: 10, fontWeight: '600' }}>
+                        {score}/100
+                      </Text>
+                    )}
+                    <Text style={{ color: C.muted, fontSize: 9 }}>
+                      {new Date(sig.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    </Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            )
+          })}
+        </View>
+      )}
 
       {/* Coin selector */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false}
@@ -524,31 +597,34 @@ export default function SignalsScreen() {
                 {sigStale ? '  ·  updating…' : ''}
               </Text>
 
-              {/* Simulation banner — en önemli kart */}
+              {/* Simulation banner */}
               {stats.sim_balance != null && (
                 <View style={[s.simCard, {
-                  borderColor: stats.sim_total_return >= 0 ? C.green : C.red,
+                  borderColor: stats.total_pnl >= 0 ? C.green : C.red,
                 }]}>
                   <View style={{ flex: 1 }}>
-                    <Text style={s.simLbl}>$100 ile tüm sinyallere girseydin</Text>
+                    <Text style={s.simLbl}>Bileşik Getiri (compound)</Text>
                     <Text style={[s.simBalance, {
-                      color: stats.sim_total_return >= 0 ? C.green : C.red,
+                      color: stats.total_pnl >= 0 ? C.green : C.red,
                     }]}>
-                      ${stats.sim_balance.toFixed(2)}
+                      ${(100 + stats.total_pnl).toFixed(2)}
                     </Text>
-                    <Text style={{ color: C.muted, fontSize: 10, marginTop: 2 }}>
+                    <Text style={s.simDesc}>
+                      $100 başlangıç · her trade bakiye ile
+                    </Text>
+                    <Text style={{ color: C.muted, fontSize: 10, marginTop: 4 }}>
                       {stats.wins}W / {stats.losses}L / {stats.open} açık
-                      {' · '}Max DD %{stats.max_drawdown}
+                      {' · '}Sharpe {stats.sharpe}
                     </Text>
                   </View>
                   <View style={{ alignItems: 'flex-end' }}>
                     <Text style={[s.simReturn, {
-                      color: stats.sim_total_return >= 0 ? C.green : C.red,
+                      color: stats.total_pnl >= 0 ? C.green : C.red,
                     }]}>
-                      {stats.sim_total_return >= 0 ? '+' : ''}{stats.sim_total_return}%
+                      {stats.total_pnl >= 0 ? '+' : ''}{stats.total_pnl}%
                     </Text>
-                    <Text style={{ color: C.muted, fontSize: 10, marginTop: 4 }}>
-                      Sharpe {stats.sharpe}
+                    <Text style={{ color: C.muted, fontSize: 10, marginTop: 6 }}>
+                      Max DD %{stats.max_drawdown}
                     </Text>
                   </View>
                 </View>
@@ -557,12 +633,12 @@ export default function SignalsScreen() {
               {/* Grid stats */}
               <View style={s.statsGrid}>
                 {[
-                  { l:'Total Sinyal',   v: String(stats.total),                                      c: C.text },
-                  { l:'Win Rate',       v: `${stats.win_rate}%`,                                     c: stats.win_rate >= 50 ? C.green : C.red },
-                  { l:'Bileşik PnL',   v: `${stats.total_pnl >= 0 ? '+' : ''}${stats.total_pnl}%`,  c: stats.total_pnl >= 0 ? C.green : C.red },
-                  { l:'Profit Factor',  v: String(stats.profit_factor),                              c: stats.profit_factor >= 1.5 ? C.green : C.orange },
-                  { l:'Ort. Kazanç',   v: `+${stats.avg_win}%`,                                     c: C.green },
-                  { l:'Ort. Kayıp',    v: `${stats.avg_loss}%`,                                     c: C.red },
+                  { l:'Total Sinyal',   v: String(stats.total),              c: C.text },
+                  { l:'Win Rate',       v: `${stats.win_rate}%`,             c: stats.win_rate >= 50 ? C.green : C.red },
+                  { l:'Profit Factor',  v: String(stats.profit_factor),      c: stats.profit_factor >= 1.5 ? C.green : C.orange },
+                  { l:'Ort. Kazanç',    v: `+${stats.avg_win}%`,            c: C.green },
+                  { l:'Ort. Kayıp',     v: `${stats.avg_loss}%`,            c: C.red },
+                  { l:'Sabit $100/trade', v: `$${stats.sim_balance?.toFixed(2) ?? '—'}`, c: stats.sim_total_return >= 0 ? C.green : C.red },
                 ].map(item => (
                   <View key={item.l} style={s.statCell}>
                     <Text style={s.statLbl}>{item.l}</Text>
@@ -690,10 +766,21 @@ export default function SignalsScreen() {
 
 const s = StyleSheet.create({
   root:     { flex: 1, backgroundColor: C.bg },
-  hdr:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 52, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: C.border },
-  hdrTitle: { fontSize: 22, fontWeight: '700', color: C.text },
-  centered: { paddingVertical: 60, alignItems: 'center' },
-  retryBtn: { marginTop: 14, paddingHorizontal: 20, paddingVertical: 8, borderWidth: 1, borderColor: C.cyan, borderRadius: 6 },
+  hdr:           { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 52, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: C.border },
+  hdrTitle:      { fontSize: 22, fontWeight: '700', color: C.text },
+  openCountBadge:{ backgroundColor: C.orange + '22', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  openCountTxt:  { color: C.orange, fontSize: 11, fontWeight: '700' },
+  centered:      { paddingVertical: 60, alignItems: 'center' },
+  retryBtn:      { marginTop: 14, paddingHorizontal: 20, paddingVertical: 8, borderWidth: 1, borderColor: C.cyan, borderRadius: 6 },
+
+  openSection:  { marginHorizontal: 14, marginTop: 10 },
+  openTitle:    { fontSize: 13, fontWeight: '700', color: C.orange, marginBottom: 6 },
+  openCard:     { flexDirection: 'row', alignItems: 'center', backgroundColor: C.card, borderRadius: 8, borderLeftWidth: 3, borderTopWidth: 1, borderRightWidth: 1, borderBottomWidth: 1, borderTopColor: C.border, borderRightColor: C.border, borderBottomColor: C.border, padding: 10, marginBottom: 6 },
+  openDirBadge: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  openDirTxt:   { color: '#fff', fontSize: 12, fontWeight: '800' },
+  openCoin:     { color: C.text, fontSize: 13, fontWeight: '700' },
+  openEntry:    { color: C.muted, fontSize: 10, marginTop: 1 },
+  openPnl:      { fontSize: 15, fontWeight: '800', fontVariant: ['tabular-nums'] as any },
 
   coinScroll:    { borderBottomWidth: 1, borderBottomColor: C.border },
   coinContent:   { paddingHorizontal: 12, paddingVertical: 7, gap: 6, flexDirection: 'row' },
@@ -726,6 +813,7 @@ const s = StyleSheet.create({
 
   simCard:    { flexDirection: 'row', alignItems: 'center', backgroundColor: C.card, borderRadius: 10, borderWidth: 1.5, padding: 14, marginBottom: 10 },
   simLbl:     { fontSize: 10, color: C.muted, marginBottom: 4 },
+  simDesc:    { fontSize: 9, color: C.muted, marginTop: 2, fontStyle: 'italic' },
   simBalance: { fontSize: 28, fontWeight: '800', fontVariant: ['tabular-nums'] as any },
   simReturn:  { fontSize: 22, fontWeight: '800', fontVariant: ['tabular-nums'] as any },
 
