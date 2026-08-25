@@ -2,10 +2,8 @@ import axios from 'axios'
 
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
 // .env dosyasından okunur — .env.example'a bakarak kendi .env dosyanı oluştur
-export const TUNNEL_URL = process.env.EXPO_PUBLIC_TUNNEL_URL
-  ?? 'https://fun-sat-sewing-development.trycloudflare.com'
-export const API_KEY    = process.env.EXPO_PUBLIC_API_KEY
-  ?? '7Vb70Gwpy2McDXJIXQUt81MBoo-LvyQtfo7Gd_tPOw4'
+export const TUNNEL_URL = process.env.EXPO_PUBLIC_TUNNEL_URL ?? ''
+export const API_KEY    = process.env.EXPO_PUBLIC_API_KEY ?? ''
 
 const api = axios.create({
   baseURL: TUNNEL_URL,
